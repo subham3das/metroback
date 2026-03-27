@@ -12,8 +12,14 @@ const apiCache = new Map();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 // --- PERFORMANCE MIDDLEWARE ---
-const allowedOrigins = ['https://metroclassy-ten.vercel.app/home.html','https://metroclassy-metro.vercel.app', 'https://metroclassy-admin.vercel.app', 'http://localhost:5500'];
-app.use(cors({
+const allowedOrigins = [
+  'https://metroclassy-ten.vercel.app',      
+  'https://metroclassy-metro.vercel.app',
+  'https://metroclassy-admin.vercel.app',
+  'http://localhost:5500',
+  'http://127.0.0.1:5500',
+  'http://localhost:3000'
+];
     origin: function(origin, callback) {
         if (!origin || allowedOrigins.includes(origin)) {
             callback(null, true);
