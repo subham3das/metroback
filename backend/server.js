@@ -1,7 +1,7 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-const compression = require("compression"); // Added for faster data transfer
+const compression = require("compression");
 const { OAuth2Client } = require("google-auth-library");
 const nodemailer = require("nodemailer");
 require("dotenv").config();
@@ -11,31 +11,35 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const apiCache = new Map();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
-// --- PERFORMANCE MIDDLEWARE ---
+// --- CORS ---
 const allowedOrigins = [
-  'https://metroclassy-ten.vercel.app',      
-  'https://metroclassy-metro.vercel.app',
-  'https://metroclassy-admin.vercel.app',
-  'http://localhost:5500',
-  'http://127.0.0.1:5500',
-  'http://localhost:3000'
+    'https://metroclassy-ten.vercel.app',
+    'https://metroclassy-metro.vercel.app',
+    'https://metroclassy-admin.vercel.app',
+    'http://localhost:5500',
+    'http://127.0.0.1:5500',
+    'http://localhost:3000'
 ];
-    origin: function(origin, callback) {
+
+app.use(cors({
+    origin: function (origin, callback) {
         if (!origin || allowedOrigins.includes(origin)) {
             callback(null, true);
         } else {
             callback(new Error('Not allowed by CORS'));
         }
-    }
+    },
+    credentials: true
 }));
 
-app.use(compression()); // Compresses JSON responses to load faster on frontend
-app.use(express.json({ limit: "10mb" })); // Reduced from 50mb for better memory safety
+// --- PERFORMANCE MIDDLEWARE ---
+app.use(compression());
+app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
-// --- DATABASE HANDSHAKE (OPTIMIZED POOLING) ---
+// --- DATABASE CONNECTION (OPTIMIZED POOLING) ---
 const dbOptions = {
-    maxPoolSize: 10, // Maintain up to 10 socket connections for parallel queries
+    maxPoolSize: 10,
     serverSelectionTimeoutMS: 5000,
     socketTimeoutMS: 45000,
 };
@@ -56,7 +60,7 @@ const connectDB = async () => {
 };
 connectDB();
 
-// --- MODELS (Kept exactly as provided) ---
+// --- MODELS ---
 const Collection = mongoose.model("Collection", new mongoose.Schema({
     name: { type: String, required: true, unique: true },
     isActive: { type: Boolean, default: true },
@@ -67,19 +71,18 @@ const Category = mongoose.model("Category", new mongoose.Schema({
     parentCollection: { type: mongoose.Schema.Types.ObjectId, ref: "Collection", required: true },
 }));
 
-// Added Indexing for faster search/filter
 const productSchema = new mongoose.Schema({
-    name: { type: String, index: true }, 
+    name: { type: String, index: true },
     description: String,
     mrp: Number,
     salePrice: Number,
-    stock: Object, 
+    stock: Object,
     colors: Array,
-    media: Array, 
+    media: Array,
     collectionId: { type: mongoose.Schema.Types.ObjectId, ref: "Collection", index: true },
     categoryId: { type: mongoose.Schema.Types.ObjectId, ref: "Category", index: true },
     tags: String,
-    isArchived: { type: Boolean, default: false, index: true }, 
+    isArchived: { type: Boolean, default: false, index: true },
     dateDeployed: { type: Date, default: Date.now },
     reviews: [{
         userId: mongoose.Schema.Types.ObjectId,
@@ -103,7 +106,7 @@ const User = mongoose.model("User", new mongoose.Schema({
 const Admin = mongoose.model("Admin", new mongoose.Schema({
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true }
-}), "admin"); 
+}), "admin");
 
 const Order = mongoose.model("Order", new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, index: true },
@@ -111,8 +114,8 @@ const Order = mongoose.model("Order", new mongoose.Schema({
     address: Object,
     totalAmount: Number,
     paymentMethod: String,
-    status: { type: String, default: "Progress", index: true }, 
-    trackingLink: { type: String, default: "" },   
+    status: { type: String, default: "Progress", index: true },
+    trackingLink: { type: String, default: "" },
     date: { type: Date, default: Date.now, index: true }
 }));
 
@@ -133,15 +136,15 @@ const Hero = mongoose.model("Hero", new mongoose.Schema({
     mediaUrl: String,
     mediaType: { type: String, enum: ['image', 'video'] },
     productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
-    slot: { type: Number, unique: true } 
+    slot: { type: Number, unique: true }
 }));
 
 // --- MIDDLEWARE ---
 const adminGuard = async (req, res, next) => {
-    const userId = req.headers['admin-signal']; 
+    const userId = req.headers['admin-signal'];
     if (!userId) return res.status(401).json({ error: "ACCESS DENIED: NO SIGNAL" });
     try {
-        const admin = await User.findById(userId).select('role').lean(); // Optimization: Only fetch role, skip Mongoose overhead
+        const admin = await User.findById(userId).select('role').lean();
         if (admin && admin.role === 'admin') return next();
         res.status(403).json({ error: "FORBIDDEN: ADMIN CLEARANCE REQUIRED" });
     } catch (e) { res.status(500).json({ error: "Guard System Fault" }); }
@@ -149,10 +152,10 @@ const adminGuard = async (req, res, next) => {
 
 const transporter = nodemailer.createTransport({
     service: "gmail",
-    pool: true, // Use pooled connections for sending multiple emails
+    pool: true,
     auth: {
-        user: process.env.EMAIL_USER, 
-        pass: process.env.EMAIL_PASS 
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
     }
 });
 
@@ -162,7 +165,6 @@ const otpVault = new Map();
 app.get("/ping", (req, res) => res.send("pong"));
 
 // --- AUTH ROUTES ---
-
 app.post("/api/auth/forgot-password", async (req, res) => {
     const { email } = req.body;
     try {
@@ -173,11 +175,11 @@ app.post("/api/auth/forgot-password", async (req, res) => {
         otpVault.set(email, { otp, expires: Date.now() + 600000 });
 
         transporter.sendMail({
-            from: '"METROCLASSY HQ" <metroclassy1223@gmail.com>',
+            from: '"METROCLASSY HQ" <' + process.env.EMAIL_USER + '>',
             to: email,
             subject: "PASSWORD RESET SIGNAL",
             html: `<h1>VERIFICATION CODE: ${otp}</h1>`
-        }).catch(err => console.error("Background Mail Error:", err)); 
+        }).catch(err => console.error("Background Mail Error:", err));
 
         res.json({ success: true, message: "Transmission initiated." });
     } catch (err) { res.status(500).json({ error: "Internal Error" }); }
@@ -191,7 +193,7 @@ app.post("/api/auth/reset-password", async (req, res) => {
     }
     try {
         await User.updateOne({ email }, { password: newPassword });
-        otpVault.delete(email); 
+        otpVault.delete(email);
         res.json({ success: true, message: "Credentials Updated." });
     } catch (err) { res.status(500).json({ error: "Vault Update Failed" }); }
 });
@@ -215,7 +217,7 @@ app.post("/api/auth/google", async (req, res) => {
             audience: process.env.GOOGLE_CLIENT_ID,
         });
         const payload = ticket.getPayload();
-        
+
         let user = await User.findOne({ email: payload.email });
         if (!user) {
             user = new User({
@@ -245,15 +247,15 @@ app.post("/api/auth/signup", async (req, res) => {
 app.post("/api/auth/admin-login", async (req, res) => {
     try {
         const { email, password, secureCode } = req.body;
-        const MASTER_SECURE_CODE = "774921";
+        const MASTER_SECURE_CODE = process.env.MASTER_SECURE_CODE; // ✅ from env
         const adminRecord = await Admin.findOne({ email }).lean();
-        
+
         if (adminRecord && adminRecord.password === password) {
             if (!secureCode || secureCode !== MASTER_SECURE_CODE) {
                 return res.status(403).json({ error: "SECURE CODE REQUIRED", step: 2 });
             }
             let adminUser = await User.findOne({ email: adminRecord.email });
-            if(!adminUser) {
+            if (!adminUser) {
                 adminUser = new User({ name: "Admin_Root", email: adminRecord.email, password: adminRecord.password, role: "admin" });
                 await adminUser.save();
             }
@@ -276,7 +278,6 @@ app.post("/api/auth/login", async (req, res) => {
 });
 
 // --- PRODUCT & REVIEW ROUTES ---
-
 app.post("/api/products/:id/reviews", async (req, res) => {
     try {
         const { userId, userName, rating, text } = req.body;
@@ -296,17 +297,17 @@ app.get("/api/products", async (req, res) => {
             if (Date.now() - cached.time < CACHE_TTL_MS) return res.json(cached.data);
         }
 
-        let query = { isArchived: false }; 
+        let query = { isArchived: false };
         if (req.query.search) query.name = { $regex: req.query.search, $options: 'i' };
         if (req.query.collection) query.collectionId = req.query.collection;
         if (req.query.category) query.categoryId = req.query.category;
-        
+
         let sort = req.query.sort === 'price-low' ? { salePrice: 1 } : req.query.sort === 'price-high' ? { salePrice: -1 } : { dateDeployed: -1 };
-        
+
         const products = await Product.find(query)
             .populate("collectionId categoryId")
             .sort(sort)
-            .lean(); // Faster JSON conversion
+            .lean();
         apiCache.set(cacheKey, { data: products, time: Date.now() });
         res.json(products);
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -327,7 +328,6 @@ app.get("/api/heroes", async (req, res) => {
 });
 
 // --- ORDER HANDLING ---
-
 app.post("/api/orders/deploy", async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -342,7 +342,7 @@ app.post("/api/orders/deploy", async (req, res) => {
                 const requestedQty = item.quantity || 1;
                 if (product.stock[item.size] < requestedQty) throw new Error(`Insufficient stock for ${product.name}`);
                 product.stock[item.size] -= requestedQty;
-                product.markModified('stock'); 
+                product.markModified('stock');
                 await product.save({ session });
             }
         }
@@ -358,7 +358,6 @@ app.post("/api/orders/deploy", async (req, res) => {
 });
 
 // --- ADMIN SECURED ROUTES ---
-
 app.get("/api/admin/hq-stats", adminGuard, async (req, res) => {
     try {
         const [orders, gearCount, citizenCount] = await Promise.all([
@@ -398,8 +397,7 @@ app.delete("/api/admin/products/:pid/reviews/:rid", adminGuard, async (req, res)
     } catch (err) { res.status(500).json({ error: "Termination Failed" }); }
 });
 
-// --- MISC ROUTES (LEAN OPTIMIZED) ---
-
+// --- MISC ROUTES ---
 app.get("/api/track/:id", async (req, res) => {
     try {
         const { id } = req.params;
@@ -422,7 +420,7 @@ app.patch("/api/orders/:id/abort", async (req, res) => {
 
         for (const item of order.items) {
             await Product.updateOne(
-                { _id: item.id || item._id }, 
+                { _id: item.id || item._id },
                 { $inc: { [`stock.${item.size}`]: item.quantity || 1 } },
                 { session }
             );
@@ -437,11 +435,11 @@ app.patch("/api/orders/:id/abort", async (req, res) => {
     } finally { session.endSession(); }
 });
 
-// Admin Control (Fast Routes)
+// --- ADMIN CONTROL ROUTES ---
 app.post("/api/collections", adminGuard, async (req, res) => { const col = new Collection(req.body); await col.save(); res.json(col); });
-app.delete("/api/collections/:id", adminGuard, async (req, res) => { 
+app.delete("/api/collections/:id", adminGuard, async (req, res) => {
     await Promise.all([Category.deleteMany({ parentCollection: req.params.id }), Collection.findByIdAndDelete(req.params.id)]);
-    res.json({ success: true }); 
+    res.json({ success: true });
 });
 app.post("/api/categories", adminGuard, async (req, res) => { const cat = new Category(req.body); await cat.save(); res.json(cat); });
 app.delete("/api/categories/:id", adminGuard, async (req, res) => { await Category.findByIdAndDelete(req.params.id); res.json({ success: true }); });
@@ -476,4 +474,6 @@ app.get("/api/orders/user/:userId", async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Signal Lost" }); }
 });
 
-app.listen(5000, () => console.log("🚀 Syndicate Hangar Online | Port 5000"));
+// --- START SERVER ---
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`🚀 Syndicate Hangar Online | Port ${PORT}`));
